@@ -21,7 +21,7 @@ from sentence_transformers import SentenceTransformer
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-DATA_PATH = ROOT_DIR / "data" / "gold_chunks.parquet"
+DATA_PATH = ROOT_DIR / "data" / "legal_embeddings_delta.parquet"
 VECTOR_DIR = ROOT_DIR / "vector_store"
 INDEX_PATH = VECTOR_DIR / "faiss_index.bin"
 METADATA_PATH = VECTOR_DIR / "metadata.pkl"
@@ -310,7 +310,7 @@ def _build(parquet_path: Path, model_name: str, batch_size: int, if_needed: bool
     if not parquet_path.exists():
         raise FileNotFoundError(
             f"Input parquet not found: {parquet_path}\n"
-            "Copy exported file to lexai-local/data/gold_chunks.parquet first."
+            "Copy the repository dataset to lexai-local/data/legal_embeddings_delta.parquet first."
         )
 
     source_sha = _file_sha256(parquet_path)
@@ -518,7 +518,7 @@ def _parse_args() -> argparse.Namespace:
         "--parquet",
         type=str,
         default=str(DATA_PATH),
-        help="Path to input parquet. Supports gold chunks or Databricks embedding export parquet.",
+        help="Path to input parquet. Defaults to the repository Databricks embedding export; also supports gold-chunk parquet.",
     )
     p.add_argument("--model", type=str, default=DEFAULT_MODEL, help="SentenceTransformer model name.")
     p.add_argument("--batch-size", type=int, default=64, help="Embedding batch size.")

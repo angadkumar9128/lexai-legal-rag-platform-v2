@@ -1,23 +1,32 @@
-# Virtual environment
+# Python environments and caches
 .venv/
 **/.venv/
-
-# Python cache
 __pycache__/
+**/__pycache__/
 *.pyc
+.pytest_cache/
+**/.pytest_cache/
+.mypy_cache/
+**/.mypy_cache/
 
-# Vector DB files
+# Generated vector-store artifacts
 vector_store/faiss_index.bin
 vector_store/metadata.pkl
 vector_store/lexical_artifacts.pkl
 vector_store/build_manifest.json
+**/vector_store/faiss_index.bin
+**/vector_store/metadata.pkl
+**/vector_store/lexical_artifacts.pkl
+**/vector_store/build_manifest.json
 
-# Data files
+# Generated/local datasets
 data/gold_chunks.parquet
+**/data/gold_chunks.parquet
 
 # Local GGUF model artifacts
 models/*.gguf
+**/models/*.gguf
 
-# OS files
+# OS/editor files
 .DS_Store
 Thumbs.db

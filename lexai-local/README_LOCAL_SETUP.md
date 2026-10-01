@@ -1,122 +1,99 @@
-# LexAI Local Setup (Enterprise CPU Mode)
+# LexAI Local Setup
 
-This setup runs LexAI fully local on Windows CPU with:
+This is the repository's CPU-oriented local serving profile.
 
-- Embeddings: `BAAI/bge-base-en-v1.5`
-- Retrieval: FAISS cosine + persisted lexical artifacts
-- Optional reranker: cross-encoder profile-based
-- Generation: `llama-cpp-python` with GGUF model profiles
-
-## 1) System Requirements
+## Requirements
 
 - Windows 10/11
 - Python 3.10 or 3.11
-- RAM: 16 GB recommended
-- Disk: 15+ GB free
+- 16 GB RAM recommended
+- Disk for Python packages, embedding models and optional GGUF models
 
-## 2) Project Layout
+## Bootstrap data
 
-```text
-lexai-local/
-  data/
-    gold_chunks.parquet
-  models/
-    qwen2.5-3b-instruct-q4_k_m.gguf                 # balanced profile (recommended)
-    mistral-7b-instruct.Q4_K_M.gguf                 # high_accuracy profile (optional)
-  vector_store/
-    build_vector_db.py
-    faiss_index.bin                                 # generated
-    metadata.pkl                                    # generated
-    lexical_artifacts.pkl                           # generated
-    build_manifest.json                             # generated
-  rag/
-    retriever.py
-    generator.py
-    rag_pipeline.py
-  app.py
-  requirements.txt
-```
+The repository currently includes:
 
-## 3) Create Environment
+    data/legal_embeddings_delta.parquet
 
-```powershell
-cd lexai-local
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-```
+The local vector builder uses this file by default. Do not rename it to gold_chunks.parquet.
 
-## 4) Build Artifacts
+## Setup
 
-```powershell
-python vector_store/build_vector_db.py --if-needed
-```
+PowerShell:
 
-Generated files:
+    cd lexai-local
+    py -3.11 -m venv .venv
+    .venv\Scripts\Activate.ps1
+    python -m pip install --upgrade pip
+    pip install -r requirements.txt
 
-- `vector_store/faiss_index.bin`
-- `vector_store/metadata.pkl`
-- `vector_store/lexical_artifacts.pkl`
-- `vector_store/build_manifest.json`
+## Build
 
-## 5) Run App
+    python vector_store/build_vector_db.py --if-needed
 
-```powershell
-streamlit run app.py
-```
+Generated Git-ignored files:
 
-## 6) One-Command Flow
+    vector_store/faiss_index.bin
+    vector_store/metadata.pkl
+    vector_store/lexical_artifacts.pkl
+    vector_store/build_manifest.json
 
-```powershell
-python vector_store/build_vector_db.py --if-needed; if ($LASTEXITCODE -eq 0) { streamlit run app.py }
-```
+## Run
 
-## 7) Recommended Environment Variables
+    streamlit run app.py
 
-```powershell
-$env:LEXAI_MODEL_PROFILE="balanced"
-$env:LEXAI_USE_CROSS_ENCODER="1"
-$env:LEXAI_USE_LLM="1"
-$env:LEXAI_MAX_CONTEXT_CHARS="1500"
-```
+## Default local stack
 
-Optional model path overrides:
+- Embeddings: BAAI/bge-base-en-v1.5
+- Retrieval: FAISS inner-product/cosine + lexical metadata scoring
+- Reranker: optional cross-encoder
+- Generation: optional local GGUF models
 
-```powershell
-$env:LEXAI_GGUF_BALANCED="C:\path\to\qwen2.5-3b-instruct-q4_k_m.gguf"
-$env:LEXAI_GGUF_HIGH="C:\path\to\mistral-7b-instruct.Q4_K_M.gguf"
-```
+Expected models:
 
-## 8) Performance Targets
+    models/qwen2.5-3b-instruct-q4_k_m.gguf
+    models/mistral-7b-instruct.Q4_K_M.gguf
 
-- Retrieval p95: `< 500 ms`
-- Generation p95: `< 45 s`
-- Total p95: `< 60 s`
+Override model paths:
 
-## 9) Troubleshooting
+    $env:LEXAI_LLM1_MODEL="C:\path\to\qwen2.5-3b-instruct-q4_k_m.gguf"
+    $env:LEXAI_LLM2_MODEL="C:\path\to\mistral-7b-instruct.Q4_K_M.gguf"
 
-### Missing model file
+Disable local LLM generation if needed:
 
-Set `LEXAI_GGUF_BALANCED` (and optionally `LEXAI_GGUF_HIGH`) to exact GGUF path.
+    $env:LEXAI_USE_LLM="0"
+    $env:LEXAI_USE_LLM1="0"
 
-### Missing parquet
+The deterministic fallback path remains available.
 
-Place `gold_chunks.parquet` at `lexai-local/data/gold_chunks.parquet`.
+## One-command startup after dependencies are installed
 
-### Build fails due to columns
+    python vector_store/build_vector_db.py --if-needed
+    if ($LASTEXITCODE -eq 0) { streamlit run app.py }
 
-Parquet must include:
+## Troubleshooting
 
-- `chunk_id`
-- `act_name`
-- `section_number`
-- `chunk_text`
+### Input parquet not found
+
+Run from lexai-local or pass the repository file explicitly:
+
+    python vector_store/build_vector_db.py --parquet .\data\legal_embeddings_delta.parquet --if-needed
+
+### Retriever is not ready
+
+Rebuild:
+
+    python vector_store/build_vector_db.py --if-needed
+
+### llama-cpp-python installation fails on Windows
+
+The local LLM is optional:
+
+    $env:LEXAI_USE_LLM="0"
+    $env:LEXAI_USE_LLM1="0"
+
+Then run the Streamlit app again.
 
 ### Slow responses
 
-1. Use profile `balanced` in UI.
-2. Keep `top_k` between 3 and 4.
-3. Keep context cap at 1500 chars.
-4. Keep reranker enabled only when needed.
-
+Keep fast mode enabled and use top_k around 3–5. Reranking and local generation are the expensive optional stages.
