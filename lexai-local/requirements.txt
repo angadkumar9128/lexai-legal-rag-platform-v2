@@ -2,5 +2,6 @@ pandas
 pyarrow
 sentence-transformers
 faiss-cpu
-llama-cpp-python
+torch
+torchvision
 streamlit
