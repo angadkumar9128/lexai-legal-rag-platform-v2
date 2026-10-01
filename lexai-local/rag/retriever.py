@@ -15,6 +15,13 @@ class Retriever:
   self.index=faiss.read_index(str(INDEX_PATH))
   with META_PATH.open("rb") as f: self.rows=pickle.load(f)
   self.embedder=SentenceTransformer(EMBED_MODEL)
+  embed_dim=int(self.embedder.get_sentence_embedding_dimension())
+  index_dim=int(self.index.d)
+  if index_dim != embed_dim:
+   raise ValueError(f"Vector store dimension mismatch: FAISS index has {index_dim} dimensions, but {EMBED_MODEL} produces {embed_dim}. Rebuild the vector store with: python vector_store/build_vector_db.py")
+  if int(self.index.ntotal) != len(self.rows):
+   raise ValueError(f"Vector store mismatch: FAISS index has {self.index.ntotal} vectors but metadata has {len(self.rows)} rows. Rebuild the vector store.")
+  self.embedding_dim=embed_dim
   self.reranker=None
   if USE_RERANKER and CrossEncoder is not None:
    try:self.reranker=CrossEncoder(RERANK_MODEL)
@@ -83,5 +90,5 @@ def retrieve_chunks(question,top_k=5,**kwargs):
  plan=kwargs.get("analysis") or {"expanded_query":question,"domain":"general","intent":"general","acts":[],"sections":[]}
  return retrieve(question,plan,top_k)
 def retriever_status():
- try:r=get_retriever(); return {"ready":True,"corpus_size":r.n,"embed_model":EMBED_MODEL}
+ try:r=get_retriever(); return {"ready":True,"corpus_size":r.n,"embed_model":EMBED_MODEL,"embedding_dim":r.embedding_dim,"index_dim":int(r.index.d)}
  except Exception as e:return {"ready":False,"error":str(e),"corpus_size":0,"embed_model":EMBED_MODEL}
