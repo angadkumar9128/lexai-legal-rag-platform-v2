@@ -21,6 +21,9 @@ RERANK_MODEL = os.getenv("LEXAI_RERANK_MODEL", "BAAI/bge-reranker-base")
 USE_QWEN_PLANNER = os.getenv("LEXAI_USE_QWEN_PLANNER", "0").lower() not in {"0","false","no"}
 MIN_EVIDENCE_SCORE = float(os.getenv("LEXAI_MIN_EVIDENCE_SCORE", "0.34"))
 MAX_HISTORY_TURNS = int(os.getenv("LEXAI_MAX_HISTORY_TURNS", "8"))
+USE_WEB_SEARCH = os.getenv("LEXAI_USE_WEB_SEARCH", "1").lower() not in {"0","false","no"}
+WEB_MAX_RESULTS = int(os.getenv("LEXAI_WEB_MAX_RESULTS", "5"))
+WEB_SEARCH_TIMEOUT = float(os.getenv("LEXAI_WEB_SEARCH_TIMEOUT", "45"))
 
 def env_summary() -> dict:
     return {
@@ -31,4 +34,6 @@ def env_summary() -> dict:
         "top_k": RETRIEVAL_TOP_K,
         "reranker": RERANK_MODEL if USE_RERANKER else "disabled",
         "qwen_planner": USE_QWEN_PLANNER,
+        "web_search": USE_WEB_SEARCH,
+        "web_max_results": WEB_MAX_RESULTS,
     }
