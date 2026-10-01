@@ -4,6 +4,7 @@ Searches multiple public web indexes, prefers authoritative legal sources,
 fetches pages/PDFs when possible, and caches evidence locally in SQLite.
 """
 from __future__ import annotations
+import base64
 import hashlib
 import re
 import sqlite3
@@ -18,6 +19,10 @@ from config import DATA_DIR
 DB_PATH = DATA_DIR / "web_legal_cache.sqlite3"
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) LexAI/2.0"
 MAX_PAGE_CHARS = 50000
+SEARCH_TIMEOUT = 10
+FETCH_TIMEOUT = 12
+SEARCH_ENGINES = {"bing.com", "google.com", "google.co.in", "duckduckgo.com", "html.duckduckgo.com"}
+STOPWORDS = {"what","is","the","for","with","this","that","does","are","was","were","how","can","could","should","would","under","about","from","into","and","or","of","to","in","on","a","an","i","me","my","tell","give","please","india","law","legal","section","act","punishment","penalty"}
 
 PREFERRED_DOMAINS = {
     "indiacode.nic.in": "India Code — Government of India",
@@ -59,15 +64,36 @@ def _source_name(url):
         if d==k or d.endswith("."+k): return v
     return d or "Web source"
 
+def _decode_bing(value):
+    if not value: return ""
+    value=unquote(value)
+    if value.startswith("a1"):
+        raw=value[2:]+("="*(-len(value[2:])%4))
+        try:
+            decoded=base64.urlsafe_b64decode(raw).decode("utf-8","ignore")
+            if decoded.startswith(("http://","https://")): return decoded
+        except Exception: pass
+    return ""
+
 def _unwrap(href):
     href=(href or "").strip()
     try:
         q=parse_qs(urlparse(href).query)
         if q.get("uddg"): return unquote(q["uddg"][0])
-        if q.get("url") and q["url"][0].startswith("http"): return q["url"][0]
+        if q.get("url") and q["url"][0].startswith("http"): return unquote(q["url"][0])
+        if q.get("u"):
+            decoded=_decode_bing(q["u"][0])
+            if decoded: return decoded
     except Exception:
         pass
     return href
+
+def _is_search_engine(url):
+    d=_domain(url)
+    return d in SEARCH_ENGINES or any(d.endswith("."+x) for x in SEARCH_ENGINES)
+
+def _valid_destination(url):
+    return bool(urlparse(url).scheme in {"http","https"} and _domain(url) and not _is_search_engine(url))
 
 def _parse_results(html, selector):
     soup=BeautifulSoup(html,"html.parser")
@@ -89,7 +115,7 @@ def _parse_results(html, selector):
 def _ddg(q):
     try:
         u="https://html.duckduckgo.com/html/?q="+quote_plus(q)
-        r=requests.get(u,headers={"User-Agent":USER_AGENT},timeout=8)
+        r=requests.get(u,headers={"User-Agent":USER_AGENT},timeout=SEARCH_TIMEOUT)
         r.raise_for_status()
         return _parse_results(r.text,"a.result__a")
     except Exception: return []
@@ -150,34 +176,61 @@ def _save(item,text):
     c.commit(); c.close()
 
 def _cached(q,limit):
-    terms=set(re.findall(r"[a-z0-9]{3,}",q.lower()))
     c=_conn()
     rows=c.execute("SELECT url,domain,title,content,source_name,fetched_at FROM web_pages").fetchall()
     c.close()
-    scored=[]
+    out=[]
     for url,d,title,content,source,fetched in rows:
-        hay=(title+" "+content[:30000]).lower()
-        score=sum(1 for t in terms if t in hay)
-        if score: scored.append((score,url,d,title,content,source,fetched))
-    scored.sort(reverse=True)
-    return [{"url":u,"domain":d,"title":t,"content":c[:12000],"source_name":s,
-             "fetched_at":f,"cached":True,"score":score} for score,u,d,t,c,s,f in scored[:limit]]
+        item={"url":url,"domain":d,"title":title,"content":content[:12000],"source_name":source,"fetched_at":fetched,"cached":True}
+        score=_relevance(item,q)
+        if score>=0.28:
+            item["web_score"]=score; out.append(item)
+    out.sort(key=lambda x:x["web_score"],reverse=True)
+    return out[:limit]
 
-def _rank(items,q):
-    terms=set(re.findall(r"[a-z0-9]{3,}",q.lower()))
+def _query_terms(q):
+    return {x for x in re.findall(r"[a-z0-9]{3,}",q.lower()) if x not in STOPWORDS}
+
+def _query_variants(q):
+    low=q.lower()
+    variants=[q]
+    if any(x in low for x in ("grievous hurt","stabbing","stabbed","knife","assault")):
+        variants += [
+            '"voluntarily causing grievous hurt" India BNS',
+            '"grievous hurt" "dangerous weapon" India BNS',
+            '"grievous hurt" knife India law section punishment',
+            '"voluntarily causing grievous hurt" IPC India'
+        ]
+    if any(x in low for x in ("punishment","penalty","fine","imprisonment")):
+        variants.append(q+" India law section punishment")
+    return list(dict.fromkeys(variants))
+
+def _relevance(item,q):
+    terms=_query_terms(q)
+    if not terms: return 0.0
+    hay=(item.get("title","")+" "+item.get("snippet","")+" "+str(item.get("content",""))[:30000]).lower()
+    matched=sum(1 for t in terms if t in hay)
+    score=matched/max(1,len(terms))
+    qlow=q.lower()
+    for phrase in ("grievous hurt","dangerous weapon","voluntarily causing","section 326","section 117"):
+        if phrase in qlow and phrase in hay: score+=0.15
+    d=_domain(item.get("url",""))
+    if d in PREFERRED_DOMAINS or any(d.endswith("."+p) for p in PREFERRED_DOMAINS): score+=0.10
+    if d.endswith(".gov.in") or d.endswith(".nic.in"): score+=0.10
+    return min(1.0,score)
+
+def _rank(items,q,limit=None):
     unique={}
     for x in items:
-        u=x["url"]
-        if u in unique: continue
-        d=_domain(u)
-        score=0
-        hay=(x.get("title","")+" "+x.get("snippet","")).lower()
-        score += sum(2 for t in terms if t in hay)
-        if any(d==p or d.endswith("."+p) for p in PREFERRED_DOMAINS): score+=8
-        if d.endswith(".gov.in") or d.endswith(".nic.in"): score+=10
-        if d.endswith(".ac.in"): score+=5
-        unique[u]={**x,"domain":d,"source_name":_source_name(u),"web_score":score}
-    return sorted(unique.values(),key=lambda x:x["web_score"],reverse=True)
+        u=_unwrap(x.get("url",""))
+        if not _valid_destination(u): continue
+        x=dict(x); x["url"]=u; x["domain"]=_domain(u); x["source_name"]=_source_name(u)
+        score=_relevance(x,q)
+        if score<0.28: continue
+        x["web_score"]=score+(0.03 if x.get("content") else 0)
+        if u not in unique or x["web_score"]>unique[u].get("web_score",0): unique[u]=x
+    rows=sorted(unique.values(),key=lambda x:x["web_score"],reverse=True)
+    return rows[:limit] if limit else rows
 
 def search_legal_web(query,max_results=5):
     q=(query or "").strip()
@@ -190,9 +243,11 @@ def search_legal_web(query,max_results=5):
     cached=_cached(q,max_results)
     items=list(cached)
     preferred=list(PREFERRED_DOMAINS.keys())
-    searches=[q, q+" India law legal section punishment"]
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        futures=[pool.submit(_ddg,s) for s in searches]+[pool.submit(_bing,s) for s in searches]
+    searches=_query_variants(q)
+    with ThreadPoolExecutor(max_workers=9) as pool:
+        futures=[]
+        for s in searches:
+            futures.extend([pool.submit(_ddg,s),pool.submit(_bing,s),pool.submit(_google,s)])
         for f in as_completed(futures):
             try: items.extend(f.result())
             except Exception: pass
@@ -203,7 +258,7 @@ def search_legal_web(query,max_results=5):
             try: items.extend(f.result())
             except Exception: pass
 
-    candidates=_rank(items,q)
+    candidates=_rank(items,q,max_results*4)
     fresh=[]
     cached_urls={x["url"] for x in cached}
     for x in candidates:
@@ -211,7 +266,7 @@ def search_legal_web(query,max_results=5):
 
     def fetch_one(item):
         try:
-            r=requests.get(item["url"],headers={"User-Agent":USER_AGENT},timeout=10,allow_redirects=True)
+            r=requests.get(item["url"],headers={"User-Agent":USER_AGENT},timeout=FETCH_TIMEOUT,allow_redirects=True)
             r.raise_for_status()
             text=_extract(item["url"],r)
             if len(text)>=100:
@@ -233,7 +288,7 @@ def search_legal_web(query,max_results=5):
                     items.append(x)
             except Exception: pass
 
-    results=_rank(items,q)[:max_results]
+    results=_rank(items,q,max_results)
     for x in results:
         x.setdefault("evidence_type","cache")
     return results,{"enabled":True,"results":len(results),
@@ -242,7 +297,7 @@ def search_legal_web(query,max_results=5):
       "latency_ms":round((time.perf_counter()-t0)*1000,2),
       "database":str(DB_PATH),
       "search_engines":["DuckDuckGo","Bing","Google"],
-      "searched_domains":len(preferred)}
+      "searched_domains":len(preferred),"query_variants":len(searches),"relevance_threshold":0.28}
 
 def web_cache_status():
     try:

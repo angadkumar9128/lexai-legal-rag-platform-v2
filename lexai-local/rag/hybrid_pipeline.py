@@ -22,7 +22,7 @@ def _fallback_web_answer(question, web_rows):
         blocks.append(f"**[WEB {i}] {r.get('source_name',r.get('domain'))}** — {r.get('title','Untitled')}\n"
                       f"{excerpt[:1200]}\nSource: {r.get('url')}")
     return ("### Web research result\n\n"
-            "Qwen synthesis was unavailable, so LexAI is showing the retrieved web evidence directly rather than inventing a legal conclusion.\n\n"
+            "Qwen synthesis was unavailable, so LexAI is showing only relevance-checked web evidence rather than inventing a legal conclusion.\n\n"
             + "\n\n".join(blocks))
 
 def ask_hybrid(question, history=None, top_k=RETRIEVAL_TOP_K, web_max_results=WEB_MAX_RESULTS):
@@ -56,7 +56,7 @@ Include URLs for cited web sources."""
     text,llm=answer(
         [{"role":"system","content":"You are LexAI, a careful Indian legal research assistant. This is legal information, not a substitute for a qualified advocate."},
          {"role":"user","content":prompt}],
-        max_tokens=500, timeout=15)
+        max_tokens=450, timeout=35)
     fallback_used=False
     if not llm.get("ok") or not text:
         text=_fallback_web_answer(q,web_rows)
