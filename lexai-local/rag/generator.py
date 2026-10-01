@@ -44,7 +44,7 @@ PROFILE_CFG = {
         "timeout_s": float(os.environ.get("LEXAI_LLM2_TIMEOUT_HIGH", "14")),
     },
 }
-MAX_CONTEXT_FOR_LLM2 = int(os.environ.get("LEXAI_MAX_CONTEXT_FOR_LLM2", "1000"))
+MAX_CONTEXT_FOR_LLM2 = int(os.environ.get("LEXAI_MAX_CONTEXT_FOR_LLM2", "4500"))
 
 _ACTIVE_LLM: Optional[Any] = None
 _ACTIVE_MODEL_PATH: Optional[Path] = None
@@ -107,60 +107,84 @@ def _fallback(reason: str, refs: List[str]) -> str:
 
 
 def _extractive_draft(question: str, context: str, refs: List[str], analysis: Dict | None = None) -> str:
-    q = (question or "").lower()
-    lines = [x.strip() for x in (context or "").splitlines() if x.strip().startswith("- ")]
-    def _is_noisy(s: str) -> bool:
-        sl = s.lower()
-        if "on or about the day of" in sl:
-            return True
-        if "(signature and seal of the magistrate)" in sl:
-            return True
-        if len(re.findall(r"\bditto\b", sl)) >= 2:
-            return True
-        return False
+    """Produce a conservative answer directly from ranked evidence when no local LLM is available."""
+    q = _clean_text(question).lower()
+    raw_lines = [x.strip() for x in (context or "").splitlines() if x.strip()]
+    evidence: List[str] = []
+    for line in raw_lines:
+        if not line.startswith("- "):
+            continue
+        item = _clean_text(line[2:])
+        if len(item) < 35:
+            continue
+        low = item.lower()
+        if any(noise in low for noise in ["signature and seal", "ditto", "on or about the day of"]):
+            continue
+        evidence.append(item)
 
-    points = [x[2:].strip() for x in lines[:4] if len(x.strip()) > 10 and not _is_noisy(x)]
-    summary = " ".join(points[:2]).strip()
-    if len(summary) < 60:
-        summary = "Retrieved legal context indicates relevant statutory obligations and associated legal consequences."
+    # Preserve ranking while removing duplicate/near-duplicate evidence.
+    unique: List[str] = []
+    seen = set()
+    for item in evidence:
+        key = re.sub(r"[^a-z0-9]+", " ", item.lower()).strip()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+    evidence = unique[:5]
 
-    if analysis and analysis.get("possible_sections"):
-        sec_hint = ", ".join([str(s) for s in analysis.get("possible_sections", [])[:3]])
-        summary = f"{summary} Key section hints: {sec_hint}."
+    act = _clean_text(str((analysis or {}).get("possible_act", "") or ""))
+    domain = _clean_text(str((analysis or {}).get("legal_domain", "") or ""))
+    intent = _clean_text(str((analysis or {}).get("intent", "") or ""))
+    sections = [str(x).upper() for x in ((analysis or {}).get("possible_sections") or [])]
 
-    if analysis:
-        act = str(analysis.get("possible_act", "") or "").lower()
-        secs = [str(s).upper() for s in (analysis.get("possible_sections") or [])]
-        if "indian penal code" in act and "302" in secs:
-            summary = "Section 302 IPC concerns punishment for murder, typically involving severe imprisonment terms as per the provision."
-        elif "indian penal code" in act and ("304A" in secs or "279" in secs):
-            summary = "For rash or negligent driving causing harm/death, IPC provisions like Sections 279 and 304A may apply, subject to case facts."
-        elif "indian penal code" in act and "354A" in secs:
-            summary = "Non-consensual physical acts may attract sexual harassment provisions under IPC Section 354A, depending on evidence and intent."
-        elif "motor vehicles act" in act and any(s in secs for s in ["129", "177", "194D", "194"]):
-            summary = "Motor Vehicles law mandates protective headgear, and violation can attract statutory traffic penalties under applicable sections."
-
-    if "helmet" in q and "129" not in summary:
-        summary = (
-            "Motor Vehicles law requires protective headgear for riders and non-compliance attracts statutory penalty provisions."
+    if not evidence:
+        summary = "The retrieved context does not contain a usable evidence passage for this question."
+    else:
+        # Prefer passages that answer the user's actual intent.
+        intent_terms = []
+        if intent in {"penalty", "environmental_offence"}:
+            intent_terms = ["penalty", "fine", "punishable", "offence", "offense", "imprisonment", "compensation"]
+        elif intent == "compliance_remedy":
+            intent_terms = ["permission", "clearance", "prohibited", "shall", "required", "offence", "penalty", "restoration", "compensation"]
+        elif "what" in q or "how" in q:
+            intent_terms = ["shall", "must", "required", "permission", "procedure", "penalty", "offence"]
+        ranked = sorted(
+            evidence,
+            key=lambda s: (
+                sum(1 for term in intent_terms if term in s.lower()),
+                sum(1 for term in ["section", "act", "shall", "liable", "punishable"] if term in s.lower()),
+            ),
+            reverse=True,
         )
-    if any(k in q for k in ["kiss", "without permission", "without consent", "sexual harassment"]):
-        summary = (
-            "Non-consensual physical contact can attract sexual harassment or assault-related penal provisions, depending on facts and evidence."
-        )
+        selected = ranked[:3]
+        summary = " ".join(selected)
+        if act:
+            summary = f"Based on the retrieved {act} material, {summary}"
+        elif domain:
+            summary = f"Based on the retrieved {domain.replace('_', ' ')} material, {summary}"
 
     refs_block = "\n".join([f"- {r}" for r in refs]) if refs else "- Not available"
+    section_hint = ", ".join(sections[:4]) if sections else "Not explicitly identified"
+    if intent == "compliance_remedy":
+        conclusion = (
+            "The retrieved text does not establish a personalized next-step procedure. "
+            "It should not be used to infer a permit, settlement, or penalty that is not stated in the cited evidence."
+        )
+    else:
+        conclusion = "The answer above is limited to the retrieved evidence; verify the complete primary provision before relying on it."
+
     return (
         "Answer:\n"
         f"{summary}\n\n"
         "Relevant Sections:\n"
         f"{refs_block}\n\n"
         "Legal Interpretation:\n"
-        "This summary is evidence-grounded and constrained to retrieved legal text.\n\n"
+        f"Detected domain: {domain or 'general'}; intent: {intent or 'general'}; section hints: {section_hint}. "
+        "Only retrieved evidence is used; no unsupported statutory provision is added.\n\n"
         "Conclusion:\n"
-        "Confirm exact wording and penalties from the cited provisions."
+        f"{conclusion}"
     )
-
 
 def _build_prompt(question: str, context: str, refs: List[str], target_words: int, confidence_bucket: str) -> str:
     refs_block = "\n".join([f"- {r}" for r in refs]) if refs else "- Not available"
