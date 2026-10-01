@@ -24,6 +24,9 @@ FETCH_TIMEOUT = 12
 SEARCH_ENGINES = {"bing.com", "google.com", "google.co.in", "duckduckgo.com", "html.duckduckgo.com"}
 STOPWORDS = {"what","is","the","for","with","this","that","does","are","was","were","how","can","could","should","would","under","about","from","into","and","or","of","to","in","on","a","an","i","me","my","tell","give","please","india","law","legal","section","act","punishment","penalty"}
 
+DIRECT_LEGAL_SEEDS = [
+ ("BNS — India Code (official PDF)", "https://www.indiacode.nic.in/bitstream/123456789/20062/1/a2023-45.pdf"),
+]
 PREFERRED_DOMAINS = {
     "indiacode.nic.in": "India Code — Government of India",
     "legislative.gov.in": "Legislative Department — Ministry of Law & Justice",
@@ -232,6 +235,13 @@ def _rank(items,q,limit=None):
     rows=sorted(unique.values(),key=lambda x:x["web_score"],reverse=True)
     return rows[:limit] if limit else rows
 
+def _direct_seed_items(q):
+    low=q.lower()
+    if ("grievous hurt" in low or "stabbing" in low or "stabbed" in low or "knife" in low) and "ipc" not in low:
+        return [{"url":u,"title":t,"snippet":"Official India Code Bharatiya Nyaya Sanhita 2023 text; relevant provisions include sections 117 and 118."}
+                for t,u in DIRECT_LEGAL_SEEDS]
+    return []
+
 def search_legal_web(query,max_results=5):
     q=(query or "").strip()
     if not q: return [],{"enabled":True,"results":0,"error":"empty query"}
@@ -241,7 +251,7 @@ def search_legal_web(query,max_results=5):
     c.commit(); c.close()
 
     cached=_cached(q,max_results)
-    items=list(cached)
+    items=list(cached)+_direct_seed_items(q)
     preferred=list(PREFERRED_DOMAINS.keys())
     searches=_query_variants(q)
     with ThreadPoolExecutor(max_workers=9) as pool:
