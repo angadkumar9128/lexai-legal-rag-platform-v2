@@ -2,6 +2,7 @@
 from __future__ import annotations
 import re
 from rag.llm_service import json_chat
+from config import USE_QWEN_PLANNER
 
 ACT_ALIASES={
  "Bharatiya Nyaya Sanhita":["bns","bharatiya nyaya sanhita","nyaya sanhita"],
@@ -54,6 +55,13 @@ SCHEMA={"type":"object","properties":{
  "needs_clarification":{"type":"boolean"}},"required":["standalone_query","acts","sections","domain","intent","jurisdiction","language","time_sensitive","needs_clarification"],"additionalProperties":False}
 def analyze(question,history=None):
  q=_clean(question); d=_detect(q); history=history or []
+ if not USE_QWEN_PLANNER:
+  return {"original_query":q,"standalone_query":q,"expanded_query":expand_query(q),
+   "acts":[d["act"]] if d["act"] else [],
+   "sections":re.findall(r"\\b(?:section|sec\\.?)\\s*([0-9]{1,4}[A-Za-z]?)",q,re.I),
+   "domain":d["domain"],"intent":d["intent"],"jurisdiction":"India",
+   "language":"hi" if re.search(r"[\\u0900-\\u097F]",q) else "en","time_sensitive":False,
+   "needs_clarification":False,"planner_source":"deterministic"}
  messages=[
   {"role":"system","content":"You are LexAI's Indian legal research planner. Do not answer the question. Produce retrieval metadata only. Never invent section numbers. Preserve uncertainty. Handle English and Hindi/Hinglish."},
   {"role":"user","content":f"Question: {q}\nRecent conversation: {history[-4:]}\nHints: {d}\nExpanded terms: {expand_query(q)}"}]
