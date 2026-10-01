@@ -14,8 +14,8 @@ except Exception:  # pragma: no cover - optional dependency
 
 DEFAULT_MODEL = os.environ.get("LEXAI_RERANK_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2").strip()
 HIGH_MODEL = os.environ.get("LEXAI_RERANK_MODEL_HIGH", "BAAI/bge-reranker-base").strip()
-USE_RERANKER = os.environ.get("LEXAI_USE_RERANKER", "0").strip().lower() not in {"0", "false", "no"}
-RERANK_BALANCED = os.environ.get("LEXAI_RERANK_BALANCED", "0").strip().lower() in {"1", "true", "yes"}
+USE_RERANKER = os.environ.get("LEXAI_USE_RERANKER", "1").strip().lower() not in {"0", "false", "no"}
+RERANK_BALANCED = os.environ.get("LEXAI_RERANK_BALANCED", "1").strip().lower() in {"1", "true", "yes"}
 RERANK_MAX_POOL = int(os.environ.get("LEXAI_RERANK_MAX_POOL", "12"))
 
 _MODELS = {}
