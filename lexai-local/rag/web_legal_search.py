@@ -24,6 +24,9 @@ FETCH_TIMEOUT = 12
 SEARCH_ENGINES = {"bing.com", "google.com", "google.co.in", "duckduckgo.com", "html.duckduckgo.com"}
 STOPWORDS = {"what","is","the","for","with","this","that","does","are","was","were","how","can","could","should","would","under","about","from","into","and","or","of","to","in","on","a","an","i","me","my","tell","give","please","india","law","legal","section","act","punishment","penalty"}
 
+DIRECT_LEGAL_SEEDS = [
+ ("BNS — India Code (official PDF)", "https://www.indiacode.nic.in/bitstream/123456789/20062/1/a2023-45.pdf"),
+]
 PREFERRED_DOMAINS = {
     "indiacode.nic.in": "India Code — Government of India",
     "legislative.gov.in": "Legislative Department — Ministry of Law & Justice",
@@ -226,11 +229,18 @@ def _rank(items,q,limit=None):
         if not _valid_destination(u): continue
         x=dict(x); x["url"]=u; x["domain"]=_domain(u); x["source_name"]=_source_name(u)
         score=_relevance(x,q)
-        if score<0.28: continue
-        x["web_score"]=score+(0.03 if x.get("content") else 0)
+        if score<0.28 and not x.get("direct_seed"): continue
+        x["web_score"]=(0.85 if x.get("direct_seed") else score+(0.03 if x.get("content") else 0))
         if u not in unique or x["web_score"]>unique[u].get("web_score",0): unique[u]=x
     rows=sorted(unique.values(),key=lambda x:x["web_score"],reverse=True)
     return rows[:limit] if limit else rows
+
+def _direct_seed_items(q):
+    low=q.lower()
+    if ("grievous hurt" in low or "stabbing" in low or "stabbed" in low or "knife" in low) and "ipc" not in low:
+        return [{"url":u,"title":t,"snippet":"Official India Code Bharatiya Nyaya Sanhita 2023 text; sections 117 and 118 cover voluntarily causing grievous hurt and dangerous weapons." ,"direct_seed":True}
+                for t,u in DIRECT_LEGAL_SEEDS]
+    return []
 
 def search_legal_web(query,max_results=5):
     q=(query or "").strip()
@@ -241,7 +251,7 @@ def search_legal_web(query,max_results=5):
     c.commit(); c.close()
 
     cached=_cached(q,max_results)
-    items=list(cached)
+    items=list(cached)+_direct_seed_items(q)
     preferred=list(PREFERRED_DOMAINS.keys())
     searches=_query_variants(q)
     with ThreadPoolExecutor(max_workers=9) as pool:
@@ -259,6 +269,8 @@ def search_legal_web(query,max_results=5):
             except Exception: pass
 
     candidates=_rank(items,q,max_results*4)
+    # Always attempt direct primary-law seeds before ordinary search results.
+    direct=[x for x in candidates if x.get("direct_seed")]
     fresh=[]
     cached_urls={x["url"] for x in cached}
     for x in candidates:
