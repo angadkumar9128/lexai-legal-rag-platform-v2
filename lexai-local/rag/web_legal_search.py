@@ -229,8 +229,8 @@ def _rank(items,q,limit=None):
         if not _valid_destination(u): continue
         x=dict(x); x["url"]=u; x["domain"]=_domain(u); x["source_name"]=_source_name(u)
         score=_relevance(x,q)
-        if score<0.28: continue
-        x["web_score"]=score+(0.03 if x.get("content") else 0)
+        if score<0.28 and not x.get("direct_seed"): continue
+        x["web_score"]=(0.85 if x.get("direct_seed") else score+(0.03 if x.get("content") else 0))
         if u not in unique or x["web_score"]>unique[u].get("web_score",0): unique[u]=x
     rows=sorted(unique.values(),key=lambda x:x["web_score"],reverse=True)
     return rows[:limit] if limit else rows
@@ -238,7 +238,7 @@ def _rank(items,q,limit=None):
 def _direct_seed_items(q):
     low=q.lower()
     if ("grievous hurt" in low or "stabbing" in low or "stabbed" in low or "knife" in low) and "ipc" not in low:
-        return [{"url":u,"title":t,"snippet":"Official India Code Bharatiya Nyaya Sanhita 2023 text; relevant provisions include sections 117 and 118."}
+        return [{"url":u,"title":t,"snippet":"Official India Code Bharatiya Nyaya Sanhita 2023 text; sections 117 and 118 cover voluntarily causing grievous hurt and dangerous weapons." ,"direct_seed":True}
                 for t,u in DIRECT_LEGAL_SEEDS]
     return []
 
@@ -269,6 +269,8 @@ def search_legal_web(query,max_results=5):
             except Exception: pass
 
     candidates=_rank(items,q,max_results*4)
+    # Always attempt direct primary-law seeds before ordinary search results.
+    direct=[x for x in candidates if x.get("direct_seed")]
     fresh=[]
     cached_urls={x["url"] for x in cached}
     for x in candidates:
