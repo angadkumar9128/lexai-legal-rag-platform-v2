@@ -4,6 +4,7 @@ import time
 from rag.query_analyzer import analyze
 from rag.retriever import retrieve
 from rag.llm_service import answer,health
+from rag.web_legal_search import web_cache_status
 from config import MAX_HISTORY_TURNS,RETRIEVAL_TOP_K,MIN_EVIDENCE_SCORE
 
 def _evidence(rows):
@@ -51,4 +52,4 @@ Do not cite a source that does not support the statement."""
  return {"answer":text,"sources":rows,"meta":{"plan":plan,"retrieval":ret,"confidence":confidence,"mode":"grounded_qwen" if llm.get("ok") else "retrieval_only","llm":llm,"total_ms":round((time.perf_counter()-t0)*1000,2)}}
 
 def runtime_status():
- return {"llm":health()}
+ return {"llm":health(),"web_cache":web_cache_status()}
