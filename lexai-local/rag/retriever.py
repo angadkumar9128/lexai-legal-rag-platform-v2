@@ -139,7 +139,7 @@ def _detect_domain(query: str) -> str:
 
 def _detect_intent(query: str) -> str:
     q = (query or "").lower()
-    if any(k in q for k in ["kiss", "consent", "permission", "sexual harassment", "outraging modesty", "molestation", "assault"]):
+    if any(k in q for k in ["kiss", "consent", "sexual harassment", "outraging modesty", "molestation", "assault"]):
         return "sexual_offence"
     if any(k in q for k in ["tree", "trees", "cutting trees", "felling", "forest", "environment", "pollution", "wildlife"]):
         return "environmental_offence"
