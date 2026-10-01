@@ -1,5 +1,7 @@
 pandas
 pyarrow
+numpy
+requests
 sentence-transformers
 faiss-cpu
 torch
