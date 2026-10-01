@@ -53,12 +53,25 @@ SCHEMA={"type":"object","properties":{
  "sections":{"type":"array","items":{"type":"string"}},"domain":{"type":"string"},"intent":{"type":"string"},
  "jurisdiction":{"type":"string"},"language":{"type":"string"},"time_sensitive":{"type":"boolean"},
  "needs_clarification":{"type":"boolean"}},"required":["standalone_query","acts","sections","domain","intent","jurisdiction","language","time_sensitive","needs_clarification"],"additionalProperties":False}
+def _current_law_hints(q):
+ low=q.lower()
+ hints={"acts":[],"sections":[]}
+ # Since 01 Jul 2024, current Indian criminal-law queries should prefer BNS.
+ criminal=any(x in low for x in ("stab","knife","assault","grievous hurt","murder","criminal","offence","offense","punishment","penalty"))
+ if criminal and not any(x in low for x in ("ipc","indian penal code","old law","before 1 july 2024","pre-2024")):
+  hints["acts"]=["Bharatiya Nyaya Sanhita"]
+ # Exact high-signal mapping for weapon + grievous-hurt questions.
+ if ("grievous hurt" in low or "grievously" in low) and any(x in low for x in ("knife","stab","stabbing","stabbing","dangerous weapon","weapon")):
+  hints["sections"]=["118","118(2)"]
+ return hints
+
 def analyze(question,history=None):
  q=_clean(question); d=_detect(q); history=history or []
+ hints=_current_law_hints(q)
  if not USE_QWEN_PLANNER:
   return {"original_query":q,"standalone_query":q,"expanded_query":expand_query(q),
-   "acts":[d["act"]] if d["act"] else [],
-   "sections":re.findall(r"\\b(?:section|sec\\.?)\\s*([0-9]{1,4}[A-Za-z]?)",q,re.I),
+   "acts":hints["acts"] or ([d["act"]] if d["act"] else []),
+   "sections":hints["sections"] or re.findall(r"\\b(?:section|sec\\.?)\\s*([0-9]{1,4}[A-Za-z]?)",q,re.I),
    "domain":d["domain"],"intent":d["intent"],"jurisdiction":"India",
    "language":"hi" if re.search(r"[\\u0900-\\u097F]",q) else "en","time_sensitive":False,
    "needs_clarification":False,"planner_source":"deterministic"}
@@ -70,8 +83,8 @@ def analyze(question,history=None):
   obj.update({"original_query":q,"expanded_query":expand_query(str(obj.get("standalone_query") or q)),"planner_source":"qwen"})
   return obj
  return {"original_query":q,"standalone_query":q,"expanded_query":expand_query(q),
-  "acts":[d["act"]] if d["act"] else [],
-  "sections":re.findall(r"\b(?:section|sec\.?)\s*([0-9]{1,4}[A-Za-z]?)",q,re.I),
+  "acts":hints["acts"] or ([d["act"]] if d["act"] else []),
+  "sections":hints["sections"] or re.findall(r"\b(?:section|sec\.?)\s*([0-9]{1,4}[A-Za-z]?)",q,re.I),
   "domain":d["domain"],"intent":d["intent"],"jurisdiction":"India",
   "language":"hi" if re.search(r"[\u0900-\u097F]",q) else "en","time_sensitive":False,
   "needs_clarification":False,"planner_source":"deterministic"}
