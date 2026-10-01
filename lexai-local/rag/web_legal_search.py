@@ -78,8 +78,12 @@ def _parse_results(html, selector):
         href=_unwrap(a.get("href",""))
         title=a.get_text(" ",strip=True)
         if not href.startswith(("http://","https://")) or not title: continue
+        parent=node.parent if node.name=="a" else node
+        snippet=parent.get_text(" ",strip=True) if parent else title
+        snippet=re.sub(r"\\s+"," ",snippet)
+        if len(snippet)>1800: snippet=snippet[:1800]
         if any(x["url"]==href for x in out): continue
-        out.append({"url":href,"title":title})
+        out.append({"url":href,"title":title,"snippet":snippet})
     return out
 
 def _ddg(q):
@@ -210,10 +214,14 @@ def search_legal_web(query,max_results=5):
             r=requests.get(item["url"],headers={"User-Agent":USER_AGENT},timeout=10,allow_redirects=True)
             r.raise_for_status()
             text=_extract(item["url"],r)
-            if len(text)<100: return None
-            return {**item,"content":text[:12000],"fetched_at":datetime.now(timezone.utc).isoformat(),"cached":False}
+            if len(text)>=100:
+                return {**item,"content":text[:12000],"evidence_type":"page","fetched_at":datetime.now(timezone.utc).isoformat(),"cached":False}
         except Exception:
-            return None
+            pass
+        snippet=item.get("snippet","").strip()
+        if snippet:
+            return {**item,"content":snippet,"evidence_type":"search_snippet","fetched_at":datetime.now(timezone.utc).isoformat(),"cached":False}
+        return None
 
     with ThreadPoolExecutor(max_workers=6) as pool:
         futures=[pool.submit(fetch_one,x) for x in fresh]
@@ -226,6 +234,8 @@ def search_legal_web(query,max_results=5):
             except Exception: pass
 
     results=_rank(items,q)[:max_results]
+    for x in results:
+        x.setdefault("evidence_type","cache")
     return results,{"enabled":True,"results":len(results),
       "cached_results":sum(1 for x in results if x.get("cached")),
       "domains":sorted({_domain(x["url"]) for x in results}),
