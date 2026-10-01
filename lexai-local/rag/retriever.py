@@ -47,6 +47,11 @@ ACT_ALIASES: Dict[str, List[str]] = {
     "Companies Act": ["companies act", "company law", "corporate law"],
     "Constitution of India": ["constitution", "constitution of india", "article"],
     "Muslim Personal Law (Shariat) Application Act": ["muslim personal law", "shariat"],
+    "Environment (Protection) Act": ["environment protection act", "environment protection", "environmental protection", "environment department"],
+    "Forest (Conservation) Act": ["forest conservation act", "forest conservation", "forest clearance"],
+    "Indian Forest Act": ["indian forest act", "forest act", "forest offence", "reserved forest", "protected forest"],
+    "Wild Life (Protection) Act": ["wildlife protection act", "wild life protection", "wildlife offence", "protected species"],
+    "Biological Diversity Act": ["biological diversity act", "biodiversity act"],
 }
 
 QUERY_REWRITE_RULES = [
@@ -127,6 +132,8 @@ def _detect_domain(query: str) -> str:
         return "family_law"
     if any(k in q for k in ["constitution", "article", "fundamental right", "writ"]):
         return "constitutional_law"
+    if any(k in q for k in ["tree", "trees", "cutting trees", "felling", "forest", "environment", "pollution", "wildlife", "biodiversity"]):
+        return "environmental_law"
     return "general"
 
 
@@ -134,6 +141,8 @@ def _detect_intent(query: str) -> str:
     q = (query or "").lower()
     if any(k in q for k in ["kiss", "consent", "permission", "sexual harassment", "outraging modesty", "molestation", "assault"]):
         return "sexual_offence"
+    if any(k in q for k in ["tree", "trees", "cutting trees", "felling", "forest", "environment", "pollution", "wildlife"]):
+        return "environmental_offence"
     if any(k in q for k in ["penalty", "fine", "punishment", "liable", "imprisonment"]):
         return "penalty"
     if any(k in q for k in ["case law", "judgment", "precedent", "citation"]):
@@ -153,11 +162,20 @@ def _detect_act(query: str) -> str | None:
         return "Indian Penal Code"
     if _detect_domain(q) == "traffic_rules":
         return "Motor Vehicles Act"
+    if _detect_domain(q) == "environmental_law":
+        for act, aliases in ACT_ALIASES.items():
+            if any(alias in q for alias in aliases):
+                return act
     return None
 
 
 def query_normalizer(question: str) -> str:
     out = _clean_text(question)
+    qlow = out.lower()
+    if any(k in qlow for k in ["cut many trees", "cut trees", "cutting trees", "felled trees", "felling trees"]):
+        out = f"{out} tree felling forest clearance environmental offence permission"
+    elif "environment department" in qlow or "environmental department" in qlow:
+        out = f"{out} environmental law forest tree regulation"
     for patt, repl in QUERY_REWRITE_RULES:
         if re.search(patt, out, flags=re.IGNORECASE):
             out = re.sub(patt, repl, out, flags=re.IGNORECASE)
@@ -371,6 +389,13 @@ def _domain_adjust(domain: str, row: Dict) -> float:
         return 0.20
     if d == "constitutional_law" and src == "constitution":
         return 0.24
+    if d == "environmental_law":
+        if src in {"environmental_law", "forest_law"}:
+            return 0.32
+        if any(k in act_low for k in ["environment", "forest", "wild life", "wildlife", "biological diversity", "biodiversity"]):
+            return 0.28
+        if src in {"traffic_rules", "criminal_law", "civil_law", "family_law", "constitutional_law"}:
+            return -0.12
     return 0.0
 
 
@@ -537,18 +562,30 @@ def retrieve_chunks(
     sem_by_id: Dict[int, float] = {}
     dense_error = ""
 
+    # Always combine lexical and dense candidates when dense retrieval is available.
+    # A weak lexical score must never discard semantically relevant legal passages.
     if use_dense:
         t_dense = time.perf_counter()
         try:
             q_vec = np.asarray([_encode_query_cached(normalized_query)], dtype=np.float32)
-            d_scores, d_ids = index.search(q_vec, initial_k)
+            d_k = min(corpus_size, max(initial_k, 30))
+            d_scores, d_ids = index.search(q_vec, d_k)
             for rank, doc_id in enumerate(d_ids[0].tolist(), start=1):
                 if doc_id < 0 or doc_id >= corpus_size:
                     continue
-                sem = float(d_scores[0][rank - 1])
-                sem_by_id[int(doc_id)] = sem
+                sem_by_id[int(doc_id)] = max(float(d_scores[0][rank - 1]), sem_by_id.get(int(doc_id), 0.0))
                 row = dict(metadata[int(doc_id)])
                 row["_doc_id"] = int(doc_id)
+                candidates.append(row)
+            # Add a lexical pool so exact legal terminology can rescue dense misses.
+            lexical_rows, lexical_sem = _lexical_shortlist(
+                metadata, query_terms, analysis_used, limit=min(corpus_size, max(initial_k * 4, 60))
+            )
+            for row in lexical_rows:
+                doc_id = int(row.get("_doc_id", -1))
+                if doc_id < 0:
+                    continue
+                sem_by_id.setdefault(doc_id, float(lexical_sem.get(doc_id, 0.0)))
                 candidates.append(row)
         except Exception as exc:
             dense_error = str(exc)
@@ -557,9 +594,15 @@ def retrieve_chunks(
 
     if not use_dense:
         t_dense = time.perf_counter()
-        shortlist_k = min(corpus_size, max(initial_k * 2, 40))
+        shortlist_k = min(corpus_size, max(initial_k * 4, 60))
         candidates, sem_by_id = _lexical_shortlist(metadata, query_terms, analysis_used, limit=shortlist_k)
         dense_ms = (time.perf_counter() - t_dense) * 1000.0
+
+    # Deduplicate the merged candidate pool before scoring.
+    unique_candidates = {}
+    for row in candidates:
+        unique_candidates[int(row.get("_doc_id", -1))] = row
+    candidates = [row for doc_id, row in unique_candidates.items() if doc_id >= 0]
 
     candidates = _route_filter(candidates, analysis_used)
     scored = _score_rows(candidates, sem_by_id, query_terms, analysis_used, retrieval_mode)
@@ -601,7 +644,8 @@ def retrieve_chunks(
         kw = float(top.get("keyword_overlap", 0.0))
         sec_hit = 1.0 if bool(top.get("section_match", False)) else 0.0
         act_hit = 1.0 if bool(top.get("act_match", False)) else 0.0
-        confidence = (0.45 * max(0.0, sem)) + (0.35 * max(0.0, kw)) + (0.12 * sec_hit) + (0.08 * act_hit)
+        domain_hit = 1.0 if _domain_adjust(str(analysis_used.get("legal_domain", "")), top) > 0 else 0.0
+        confidence = (0.50 * max(0.0, sem)) + (0.25 * max(0.0, kw)) + (0.10 * sec_hit) + (0.10 * act_hit) + (0.05 * domain_hit)
     else:
         confidence = 0.0
     confidence = max(0.0, min(1.0, float(confidence)))
