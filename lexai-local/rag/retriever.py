@@ -124,7 +124,7 @@ def _detect_domain(query: str) -> str:
     q = (query or "").lower()
     if any(k in q for k in ["helmet", "traffic", "motor vehicle", "driving", "challan"]):
         return "traffic_rules"
-    if any(k in q for k in ["ipc", "bns", "murder", "assault", "consent", "punishment", "crime"]):
+    if any(k in q for k in ["ipc", "bns", "murder", "assault", "stab", "stabbing", "stabbed", "knife", "weapon", "injury", "hurt", "consent", "punishment", "punishments", "penalty", "penalties", "crime", "offence", "offense"]):
         return "criminal_law"
     if any(k in q for k in ["contract", "company", "agreement", "damages", "civil"]):
         return "civil_law"
@@ -143,7 +143,7 @@ def _detect_intent(query: str) -> str:
         return "sexual_offence"
     if any(k in q for k in ["tree", "trees", "cutting trees", "felling", "forest", "environment", "pollution", "wildlife"]):
         return "environmental_offence"
-    if any(k in q for k in ["penalty", "fine", "punishment", "liable", "imprisonment"]):
+    if any(k in q for k in ["penalty", "penalties", "fine", "fines", "punishment", "punishments", "liable", "liability", "imprisonment"]):
         return "penalty"
     if any(k in q for k in ["case law", "judgment", "precedent", "citation"]):
         return "case_law"
