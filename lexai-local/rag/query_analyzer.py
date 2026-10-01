@@ -87,7 +87,7 @@ def _clean_text(text: str) -> str:
 
 def _safe_intent(query: str) -> str:
     q = (query or "").lower()
-    if any(k in q for k in ["kiss", "consent", "permission", "sexual harassment", "molestation", "outraging modesty"]):
+    if any(k in q for k in ["kiss", "consent", "sexual harassment", "molestation", "outraging modesty"]):
         return "sexual_offence"
     if any(k in q for k in ["helmet", "headgear", "two-wheeler", "motorcycle"]):
         return "penalty"
