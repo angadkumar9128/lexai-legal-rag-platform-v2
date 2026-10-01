@@ -95,7 +95,7 @@ def _safe_intent(query: str) -> str:
         if any(k in q for k in ["what should i do", "what can i do", "now what", "how do i", "what to do", "permission", "clearance"]):
             return "compliance_remedy"
         return "environmental_offence"
-    if any(k in q for k in ["penalty", "fine", "punishment", "liable", "imprisonment"]):
+    if any(k in q for k in ["penalty", "penalties", "fine", "fines", "punishment", "punishments", "liable", "liability", "imprisonment"]):
         return "penalty"
     if any(k in q for k in ["case law", "judgment", "precedent", "citation"]):
         return "case_law"
@@ -108,7 +108,7 @@ def _safe_domain(query: str) -> str:
     q = (query or "").lower()
     if any(k in q for k in ["helmet", "traffic", "motor vehicle", "driving", "challan"]):
         return "traffic_rules"
-    if any(k in q for k in ["ipc", "bns", "murder", "assault", "consent", "punishment", "crime", "offence"]):
+    if any(k in q for k in ["ipc", "bns", "murder", "assault", "stab", "stabbing", "stabbed", "knife", "weapon", "injury", "hurt", "consent", "punishment", "punishments", "penalty", "penalties", "crime", "offence", "offense"]):
         return "criminal_law"
     if any(k in q for k in ["marriage", "divorce", "maintenance", "succession", "shariat", "family"]):
         return "family_law"
