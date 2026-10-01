@@ -1,0 +1,6 @@
+# Optional local GGUF generation and query rewriting
+# Install after the core requirements.
+#
+# Official prebuilt CPU wheel index:
+# pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+llama-cpp-python
