@@ -34,11 +34,11 @@ with st.sidebar:
     st.write(f"Reranker Model: `{rr_status.get('default_model', 'n/a')}`")
     st.write(f"Default Retrieval Mode: `{ret_status.get('default_retrieval_mode', 'hybrid')}`")
 
-    profile = st.selectbox("Inference Profile", options=["balanced", "high_accuracy"], index=0)
+    profile = st.selectbox("Inference Profile", options=["balanced", "high_accuracy"], index=1)
     retrieval_mode = st.selectbox("Retrieval Mode", options=["hybrid", "dbx_parity"], index=0)
-    top_k = st.slider("Top-K Retrieval", min_value=3, max_value=8, value=5)
+    top_k = st.slider("Top-K Retrieval", min_value=3, max_value=8, value=6)
     style = st.selectbox("Answer Style", options=["normal", "short", "very_short", "detailed"], index=0)
-    target_words = st.slider("Target Words", min_value=40, max_value=280, value=140, step=10)
+    target_words = st.slider("Target Words", min_value=40, max_value=320, value=180, step=10)
 
 if not ret_status.get("ready"):
     st.error(
