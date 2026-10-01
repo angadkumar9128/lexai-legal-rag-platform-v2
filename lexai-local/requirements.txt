@@ -1,10 +1,6 @@
-numpy==1.26.4
-pandas==2.2.3
-pyarrow==17.0.0
-sentence-transformers==3.2.1
-faiss-cpu==1.8.0.post1
-transformers==4.46.2
-torch==2.5.1
-streamlit==1.40.1
-scikit-learn==1.5.2
-tqdm==4.67.1
+pandas
+pyarrow
+sentence-transformers
+faiss-cpu
+llama-cpp-python
+streamlit
