@@ -7,3 +7,5 @@ faiss-cpu
 torch
 torchvision
 streamlit
+beautifulsoup4
+pypdf
