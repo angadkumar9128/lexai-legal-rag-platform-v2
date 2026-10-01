@@ -18,11 +18,11 @@ DEFAULT_TOP_K = int(os.environ.get("LEXAI_FINAL_K", "5"))
 DEFAULT_INITIAL_K = int(os.environ.get("LEXAI_INITIAL_K", "15"))
 DEFAULT_PROFILE = os.environ.get("LEXAI_PROFILE", os.environ.get("LEXAI_MODEL_PROFILE", "balanced")).strip().lower()
 DEFAULT_RETRIEVAL_MODE = os.environ.get("LEXAI_RETRIEVAL_MODE", "hybrid").strip().lower() or "hybrid"
-MAX_CONTEXT_CHARS = int(os.environ.get("LEXAI_MAX_CONTEXT_CHARS", "1500"))
-EVIDENCE_CONTEXT_CHARS = int(os.environ.get("LEXAI_EVIDENCE_CONTEXT_CHARS", "1200"))
-FAST_MODE = os.environ.get("LEXAI_FAST_MODE", "1").strip().lower() not in {"0", "false", "no"}
-FAST_SKIP_DENSE = os.environ.get("LEXAI_FAST_SKIP_DENSE", "1").strip().lower() not in {"0", "false", "no"}
-FAST_DISABLE_POLISH = os.environ.get("LEXAI_FAST_DISABLE_POLISH", "1").strip().lower() not in {"0", "false", "no"}
+MAX_CONTEXT_CHARS = int(os.environ.get("LEXAI_MAX_CONTEXT_CHARS", "5000"))
+EVIDENCE_CONTEXT_CHARS = int(os.environ.get("LEXAI_EVIDENCE_CONTEXT_CHARS", "4200"))
+FAST_MODE = os.environ.get("LEXAI_FAST_MODE", "0").strip().lower() not in {"0", "false", "no"}
+FAST_SKIP_DENSE = os.environ.get("LEXAI_FAST_SKIP_DENSE", "0").strip().lower() not in {"0", "false", "no"}
+FAST_DISABLE_POLISH = os.environ.get("LEXAI_FAST_DISABLE_POLISH", "0").strip().lower() not in {"0", "false", "no"}
 MAX_TOTAL_MS = float(os.environ.get("LEXAI_MAX_TOTAL_MS", "30000"))
 MAX_STAGE_LLM1_MS = float(os.environ.get("LEXAI_MAX_STAGE_LLM1_MS", "2500"))
 MAX_STAGE_RETRIEVE_MS = float(os.environ.get("LEXAI_MAX_STAGE_RETRIEVE_MS", "9000"))
@@ -112,7 +112,7 @@ def ask_lexai(
     resolved_profile = _safe_profile(profile)
     resolved_mode = (retrieval_mode or DEFAULT_RETRIEVAL_MODE).strip().lower()
     resolved_top_k = max(1, int(top_k))
-    shortlist_n = max(5, resolved_top_k)
+    shortlist_n = max(6, resolved_top_k)
     resolved_initial_k = max(15, int(initial_k))
     resolved_target_words = max(40, min(320, int(target_words if target_words is not None else 140)))
     resolved_style = (style or "normal").strip().lower()
@@ -220,18 +220,23 @@ def ask_lexai(
     ):
         conf_bucket = "medium"
 
-    if not gen_context:
+    # Grounding gate: never present unrelated legal provisions as an answer.
+    # A low-confidence retrieval is a retrieval failure, not permission to guess.
+    if not gen_context or confidence < 0.25:
         answer = (
             "Answer:\n"
-            "The answer is not found in the provided legal context.\n\n"
+            "I could not identify a sufficiently relevant provision in the local legal corpus to answer this question reliably.\n\n"
             "Relevant Sections:\n"
-            + ("\n".join([f"- {c}" for c in citations]) if citations else "- Not available")
-            + "\n\nLegal Interpretation:\n"
-            + str(ret_meta.get("confidence_reason", "Low confidence retrieval."))
-            + "\n\nConclusion:\nUse the cited sections and ask a narrower legal query."
+            "- No sufficiently relevant section identified\n\n"
+            "Legal Interpretation:\n"
+            f"{ret_meta.get('confidence_reason', 'Retrieval confidence is too low.')}\n\n"
+            "Conclusion:\n"
+            "No legal conclusion is generated from unrelated provisions. Refine the query with the Act, section, State, or authority involved."
         )
+        final_sources = []
+        citations = []
         llm2_ms = 0.0
-        quality_mode = "draft_only"
+        quality_mode = "grounding_gate"
     else:
         t_llm2 = time.perf_counter()
         if FAST_MODE and _elapsed_ms(total_t0) > (MAX_TOTAL_MS - 3000):
