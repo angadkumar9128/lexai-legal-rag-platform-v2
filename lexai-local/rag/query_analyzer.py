@@ -40,6 +40,11 @@ ACT_ALIASES = {
     "Companies Act": ["companies act", "company law", "corporate law"],
     "Constitution of India": ["constitution", "constitution of india", "article"],
     "Muslim Personal Law (Shariat) Application Act": ["muslim personal law", "shariat"],
+    "Environment (Protection) Act": ["environment protection act", "environment protection", "environmental protection", "environment department"],
+    "Forest (Conservation) Act": ["forest conservation act", "forest conservation", "forest clearance"],
+    "Indian Forest Act": ["indian forest act", "forest act", "forest offence", "reserved forest", "protected forest"],
+    "Wild Life (Protection) Act": ["wildlife protection act", "wild life protection", "wildlife offence", "protected species"],
+    "Biological Diversity Act": ["biological diversity act", "biodiversity act"],
 }
 
 QUERY_REWRITE_RULES = [
@@ -86,6 +91,10 @@ def _safe_intent(query: str) -> str:
         return "sexual_offence"
     if any(k in q for k in ["helmet", "headgear", "two-wheeler", "motorcycle"]):
         return "penalty"
+    if any(k in q for k in ["tree", "trees", "cut tree", "cutting trees", "felling", "forest", "environment", "pollution", "wildlife"]):
+        if any(k in q for k in ["what should i do", "what can i do", "now what", "how do i", "what to do", "permission", "clearance"]):
+            return "compliance_remedy"
+        return "environmental_offence"
     if any(k in q for k in ["penalty", "fine", "punishment", "liable", "imprisonment"]):
         return "penalty"
     if any(k in q for k in ["case law", "judgment", "precedent", "citation"]):
@@ -107,6 +116,8 @@ def _safe_domain(query: str) -> str:
         return "civil_law"
     if any(k in q for k in ["constitution", "article", "fundamental right", "writ"]):
         return "constitutional_law"
+    if any(k in q for k in ["tree", "trees", "cutting trees", "felling", "forest", "environment", "pollution", "wildlife", "biodiversity"]):
+        return "environmental_law"
     return "general"
 
 
@@ -120,6 +131,16 @@ def _detect_act(query: str) -> str:
         return "Indian Penal Code"
     if _safe_domain(q) == "traffic_rules":
         return "Motor Vehicles Act"
+    if _safe_domain(q) == "environmental_law":
+        for act in ["Environment (Protection) Act", "Forest (Conservation) Act", "Indian Forest Act", "Wild Life (Protection) Act", "Biological Diversity Act"]:
+            if any(alias in q for alias in {
+                "Environment (Protection) Act": ["environment protection", "environmental protection", "environment department"],
+                "Forest (Conservation) Act": ["forest conservation", "forest clearance"],
+                "Indian Forest Act": ["indian forest act", "forest act"],
+                "Wild Life (Protection) Act": ["wildlife protection", "wild life protection"],
+                "Biological Diversity Act": ["biological diversity", "biodiversity act"],
+            }[act]):
+                return act
     return ""
 
 
@@ -142,6 +163,11 @@ def _extract_sections(query: str) -> List[str]:
 
 def _normalize_query(query: str) -> str:
     out = _clean_text(query)
+    qlow = out.lower()
+    if any(k in qlow for k in ["cut many trees", "cut trees", "cut a tree", "cutting trees", "felled trees", "felling trees"]):
+        out = f"{out} tree felling forest clearance environmental offence permission"
+    elif any(k in qlow for k in ["environment department", "environmental department"]):
+        out = f"{out} environmental law forest tree regulation"
     if out:
         tokens = out.split()
         fixed = [TYPO_MAP.get(t.lower(), t) for t in tokens]
