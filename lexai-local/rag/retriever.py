@@ -9,6 +9,39 @@ from config import VECTOR_DIR,EMBED_MODEL,RERANK_MODEL,USE_RERANKER,RERANK_TOP_N
 try: from sentence_transformers import CrossEncoder
 except Exception: CrossEncoder=None
 INDEX_PATH=VECTOR_DIR/"faiss_index.bin"; META_PATH=VECTOR_DIR/"metadata.pkl"; TOKEN_RE=re.compile(r"[a-z0-9]{2,}")
+
+ACT_FINGERPRINTS = {
+ "Indian Penal Code": ["indian penal code","right of private defence","voluntarily causing grievous hurt","section 326","section 351","section 352","section 300","section 302"],
+ "Bharatiya Nyaya Sanhita": ["bharatiya nyaya sanhita","bns","voluntarily causing grievous hurt","section 117"],
+ "Code of Criminal Procedure": ["code of criminal procedure","magistrate","complaint","bail","cognizance","compounding of offences"],
+ "Bharatiya Nagarik Suraksha Sanhita": ["bharatiya nagarik suraksha sanhita","bnss","magistrate","cognizance","bail"],
+ "Environment (Protection) Act": ["environment (protection) act","environment protection act","environmental pollution","hazardous substance","pollution"],
+ "Motor Vehicles Act": ["motor vehicles act","motor vehicle","driving licence","registration of motor vehicles"],
+ "POCSO": ["protection of children from sexual offences","child sexual abuse","sexual assault"],
+}
+
+def _effective_act(row):
+    declared=str(row.get("act_name","")).strip()
+    text=" ".join([declared,str(row.get("section_number","")),str(row.get("chunk_text",""))]).lower()
+    # Repair only strong, unambiguous metadata/content conflicts; otherwise retain corpus metadata.
+    if "environment" in declared.lower() and any(x in text for x in ACT_FINGERPRINTS["Indian Penal Code"][1:]):
+        return "Indian Penal Code", True
+    if "environment" in declared.lower() and "bharatiya nyaya sanhita" in text:
+        return "Bharatiya Nyaya Sanhita", True
+    if "criminal procedure" in declared.lower() and "environmental pollution" in text:
+        return declared, True
+    return declared, False
+
+def _row_matches_plan(row, plan):
+    act, mismatch=_effective_act(row)
+    text=" ".join([act,str(row.get("section_number","")),str(row.get("chunk_text",""))]).lower()
+    domain=str(plan.get("domain","")).lower()
+    if domain=="criminal_law" and any(x in str(row.get("act_name","")).lower() for x in ("environment","forest","wildlife")):
+        if not any(x in text for x in ("penal code","nyaya sanhita","grievous hurt","assault","murder","offence","offense","magistrate","bail","criminal")):
+            return False
+    if domain=="environmental_law" and "environment" not in act.lower() and not any(x in text for x in ("environment","pollution","hazardous","forest","wildlife")):
+        return False
+    return True
 class Retriever:
  def __init__(self):
   if not INDEX_PATH.exists() or not META_PATH.exists(): raise FileNotFoundError("Vector store missing. Run vector_store/build_vector_db.py --if-needed")
@@ -63,7 +96,11 @@ class Retriever:
   lex.sort(reverse=True); lexical_rank={i:rank for rank,(bm,i) in enumerate(lex[:max(150,top_k*15)],1)}
   ids=set(dense_rank)|set(lexical_rank); scored=[]
   for i in ids:
-   r=dict(self.rows[i]); dr=dense_rank.get(i,9999); lr=lexical_rank.get(i,9999); rrf=1/(60+dr)+1/(60+lr)
+   r=dict(self.rows[i])
+   if not _row_matches_plan(r,plan): continue
+   effective_act,mismatch=_effective_act(r)
+   if mismatch: r["act_name_original"]=r.get("act_name"); r["act_name"]=effective_act; r["metadata_mismatch"]=True
+   dr=dense_rank.get(i,9999); lr=lexical_rank.get(i,9999); rrf=1/(60+dr)+1/(60+lr)
    bm=self._bm25(expanded,i); score=rrf*100+min(2.0,bm)*0.22+self._meta_boost(r,plan)
    r.update({"_doc_id":i,"dense_score":dense_score.get(i,0.0),"bm25_score":bm,"rrf_score":rrf,"score":score}); scored.append(r)
   scored.sort(key=lambda x:x["score"],reverse=True); candidates=scored[:max(RERANK_TOP_N,top_k)]
