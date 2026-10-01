@@ -362,6 +362,12 @@ def _intent_adjust(intent: str, row: Dict, text_low: str) -> float:
     elif intent == "penalty":
         if any(k in text_low for k in ["penalty", "fine", "punishable", "liable", "imprisonment"]):
             delta += 0.14
+    elif intent in {"environmental_offence", "compliance_remedy"}:
+        if any(k in text_low for k in [
+            "tree", "forest", "environment", "felling", "cutting", "permission",
+            "clearance", "offence", "penalty", "compensation", "restoration"
+        ]):
+            delta += 0.20
     elif intent == "general" and secs.intersection(TRAFFIC_SECTIONS):
         delta += 0.02
     return float(delta)
