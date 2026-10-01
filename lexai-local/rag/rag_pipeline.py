@@ -20,7 +20,7 @@ def ask_lexai(question,history=None,top_k=RETRIEVAL_TOP_K,**kwargs):
  if not q: return {"answer":"Please enter a legal question.","sources":[],"meta":{}}
  t0=time.perf_counter(); history=history or []
  plan=analyze(q,history)
- rows,ret=retrieve(str(plan.get("standalone_query") or q),plan,top_k)
+ rows,ret=retrieve(str(plan.get("standalone_query") or q),plan,min(top_k,6))
  evidence=_evidence(rows); confidence=float(ret.get("confidence",0))
  if not rows or confidence < MIN_EVIDENCE_SCORE:
   return {"answer":"I could not find sufficiently relevant legal provisions in the local corpus for this question. I have not generated a legal conclusion from unrelated sections. Try adding the Act, section, offence, State, date, or facts involved.","sources":[],"meta":{"plan":plan,"retrieval":ret,"confidence":confidence,"mode":"insufficient_evidence","total_ms":round((time.perf_counter()-t0)*1000,2)}}
@@ -46,7 +46,7 @@ Write a useful day-to-day legal answer with:
 - important uncertainty or missing facts
 - citations as [SOURCE n]
 Do not cite a source that does not support the statement."""
- text,llm=answer([{"role":"system","content":system},{"role":"user","content":user}],max_tokens=900)
+ text,llm=answer([{"role":"system","content":system},{"role":"user","content":user}],max_tokens=500)
  if not llm.get("ok") or not text: text="The local Qwen service is unavailable. Retrieval found these potentially relevant provisions:\n\n"+evidence
  return {"answer":text,"sources":rows,"meta":{"plan":plan,"retrieval":ret,"confidence":confidence,"mode":"grounded_qwen" if llm.get("ok") else "retrieval_only","llm":llm,"total_ms":round((time.perf_counter()-t0)*1000,2)}}
 
