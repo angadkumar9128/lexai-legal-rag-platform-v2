@@ -399,13 +399,36 @@ def _build(parquet_path: Path, model_name: str, batch_size: int, if_needed: bool
         return
 
     t_embed = time.perf_counter()
+    model = None
     if using_precomputed:
-        df, emb = _coerce_precomputed_embeddings(df)
-        faiss.normalize_L2(emb)
-        dim = int(emb.shape[1])
-        if model_name == DEFAULT_MODEL and dim == 384:
-            model_name = "sentence-transformers/all-MiniLM-L6-v2"
-        print(f"[BUILD] Using precomputed embeddings from parquet (dim={dim}, rows={len(df)})")
+        df, precomputed_emb = _coerce_precomputed_embeddings(df)
+        precomputed_dim = int(precomputed_emb.shape[1])
+        print(f"[BUILD] Precomputed embedding dimension: {precomputed_dim}")
+
+        model = SentenceTransformer(model_name)
+        dim = int(model.get_sentence_embedding_dimension())
+        print(f"[BUILD] Selected embedding model: {model_name} (dim={dim})")
+
+        if precomputed_dim == dim:
+            emb = precomputed_emb
+            faiss.normalize_L2(emb)
+            print(f"[BUILD] Using compatible precomputed embeddings (dim={dim}, rows={len(df)})")
+        else:
+            print(
+                f"[BUILD] Precomputed embeddings are incompatible with {model_name}: "
+                f"{precomputed_dim} != {dim}. Regenerating embeddings from chunk_text."
+            )
+            texts = df["chunk_text"].tolist()
+            emb = model.encode(
+                texts,
+                batch_size=int(batch_size),
+                show_progress_bar=True,
+                convert_to_numpy=True,
+                normalize_embeddings=False,
+            )
+            emb = np.asarray(emb, dtype=np.float32)
+            faiss.normalize_L2(emb)
+            print(f"[BUILD] Generated embeddings: dim={emb.shape[1]}, rows={len(df)}")
     else:
         print(f"[BUILD] Loading embedding model: {model_name}")
         model = SentenceTransformer(model_name)
