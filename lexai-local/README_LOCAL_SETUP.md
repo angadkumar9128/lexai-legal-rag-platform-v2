@@ -25,7 +25,7 @@ PowerShell:
     py -3.11 -m venv .venv
     .venv\Scripts\Activate.ps1
     python -m pip install --upgrade pip
-    pip install -r requirements.txt
+    python -m pip install -r requirements.txt
 
 ## Build
 
@@ -46,8 +46,8 @@ Generated Git-ignored files:
 
 - Embeddings: BAAI/bge-base-en-v1.5
 - Retrieval: FAISS inner-product/cosine + lexical metadata scoring
-- Reranker: optional cross-encoder
-- Generation: optional local GGUF models
+- Reranker: enabled by default for higher retrieval precision
+- Generation: optional local GGUF models; deterministic grounded fallback is used when llama-cpp-python is unavailable
 
 Expected models:
 
