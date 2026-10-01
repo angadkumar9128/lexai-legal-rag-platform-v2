@@ -16,7 +16,8 @@ def health() -> dict:
         return {"ready": False, "status": 0, "error": str(e)}
 
 def chat(messages: list[dict[str,str]], temperature: float = 0.15,
-         max_tokens: int | None = None, json_schema: dict | None = None) -> tuple[str, dict]:
+         max_tokens: int | None = None, json_schema: dict | None = None,
+         timeout: float | None = None) -> tuple[str, dict]:
     payload: dict[str, Any] = {
         "model": LLAMA_MODEL,
         "messages": messages,
@@ -34,7 +35,7 @@ def chat(messages: list[dict[str,str]], temperature: float = 0.15,
         }
     t0 = time.perf_counter()
     try:
-        r = SESSION.post(f"{LLAMA_BASE_URL}/chat/completions", json=payload, timeout=LLAMA_TIMEOUT)
+        r = SESSION.post(f"{LLAMA_BASE_URL}/chat/completions", json=payload, timeout=timeout or LLAMA_TIMEOUT)
         r.raise_for_status()
         data = r.json()
         text = str(data["choices"][0]["message"].get("content", "")).strip()
@@ -51,5 +52,5 @@ def json_chat(messages: list[dict[str,str]], schema: dict, max_tokens: int = 500
     except Exception:
         return {}, {**meta, "ok": False, "error": "Model returned invalid JSON"}
 
-def answer(messages: list[dict[str,str]], max_tokens: int = 900) -> tuple[str, dict]:
-    return chat(messages, temperature=0.12, max_tokens=max_tokens)
+def answer(messages: list[dict[str,str]], max_tokens: int = 900, timeout: float | None = None) -> tuple[str, dict]:
+    return chat(messages, temperature=0.12, max_tokens=max_tokens, timeout=timeout)
