@@ -210,7 +210,14 @@ def ask_lexai(
     citations = extract_citations(final_sources, analysis=analysis)
 
     # Step 6: generation
-    confidence = float(ret_meta.get("confidence", 0.0))
+    # Combine normalized retrieval confidence with the ranked score itself.
+    # This prevents a strong lexical/legal-domain match from being discarded merely
+    # because its FAISS semantic score is zero after lexical rescue.
+    raw_confidence = float(ret_meta.get("confidence", 0.0) or 0.0)
+    top_score = float((retrieved[0] if retrieved else {}).get("score", 0.0) or 0.0)
+    score_signal = max(0.0, min(1.0, top_score))
+    confidence = max(raw_confidence, 0.65 * raw_confidence + 0.35 * score_signal)
+    confidence = max(0.0, min(1.0, confidence))
     conf_bucket = _confidence_bucket(confidence, resolved_profile)
     if (
         conf_bucket == "low"
