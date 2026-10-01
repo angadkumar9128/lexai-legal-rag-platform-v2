@@ -148,6 +148,8 @@ def _infer_source_group(act_name: str) -> str:
         return "family_law"
     if any(k in a for k in ["contract", "civil", "property", "partnership", "arbitration"]):
         return "civil_law"
+    if any(k in a for k in ["environment", "forest", "wild life", "wildlife", "biodiversity", "biological diversity"]):
+        return "environmental_law"
     if any(k in a for k in ["judgment", "vs.", " v. "]):
         return "judgments"
     if any(k in a for k in ["report", "commission"]):
