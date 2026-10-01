@@ -36,6 +36,10 @@ def _row_matches_plan(row, plan):
     act, mismatch=_effective_act(row)
     text=" ".join([act,str(row.get("section_number","")),str(row.get("chunk_text",""))]).lower()
     domain=str(plan.get("domain","")).lower()
+    requested_acts=" ".join(plan.get("acts") or []).lower()
+    explicit_legacy=any(x in str(plan.get("original_query","")).lower() for x in ("ipc","indian penal code","old law","pre-2024","before 1 july 2024"))
+    if "bharatiya nyaya sanhita" in requested_acts and "ipc" in str(row.get("act_name","")).lower() and not explicit_legacy:
+        return False
     if domain=="criminal_law" and any(x in str(row.get("act_name","")).lower() for x in ("environment","forest","wildlife")):
         if not any(x in text for x in ("penal code","nyaya sanhita","grievous hurt","assault","murder","offence","offense","magistrate","bail","criminal")):
             return False
