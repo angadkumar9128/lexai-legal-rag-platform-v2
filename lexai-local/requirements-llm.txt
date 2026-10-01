@@ -1,7 +1,0 @@
-# Optional local GGUF generation and query rewriting
-# Core retrieval works without this package.
-#
-# The CPU wheel index avoids the normal Windows source-build path when a
-# compatible wheel is available.
---extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
-llama-cpp-python==0.3.16
