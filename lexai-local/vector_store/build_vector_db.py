@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Build a local FAISS + lexical artifact store for LexAI from gold_chunks.parquet."""
+"""Build a local FAISS + lexical artifact store for LexAI from a parquet export."""
 
 from __future__ import annotations
 
