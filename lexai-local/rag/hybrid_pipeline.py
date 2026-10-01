@@ -56,10 +56,12 @@ Include URLs for cited web sources."""
     text,llm=answer(
         [{"role":"system","content":"You are LexAI, a careful Indian legal research assistant. This is legal information, not a substitute for a qualified advocate."},
          {"role":"user","content":prompt}],
-        max_tokens=500)
+        max_tokens=500, timeout=15)
+    fallback_used=False
     if not llm.get("ok") or not text:
         text=_fallback_web_answer(q,web_rows)
+        fallback_used=True
     return {"answer":text,"sources":local_sources,"web_sources":web_rows,
             "meta":{"mode":"hybrid_web","plan":plan,"retrieval":ret,"web":web_meta,
-                    "llm":llm,"fallback_used":not bool(llm.get("ok") and text),
+                    "llm":llm,"fallback_used":fallback_used,
                     "total_ms":round((time.perf_counter()-t0)*1000,2)}}
